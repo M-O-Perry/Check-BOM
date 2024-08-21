@@ -1,0 +1,375 @@
+Sub main()
+    
+    Dim response
+    response = MsgBox(Bom extraction started., vbOKCancel)
+    
+    If response = 2 Then
+        Exit Sub
+    End If
+    
+    On Error GoTo ErrH
+
+    Dim swApp         As SldWorks.SldWorks
+
+    Dim swModelDoc    As SldWorks.ModelDoc2
+
+    Dim swSelMgr      As SldWorks.SelectionMgr
+
+    Dim swTableAnn    As SldWorks.TableAnnotation
+
+    Dim swBomFeature  As SldWorks.BomFeature
+
+    Dim swAnn         As SldWorks.Annotation
+
+    Dim vTableArr     As Variant
+
+    Dim vTable        As Variant
+
+    Dim retval        As Boolean
+
+    Dim CSVFile       As String
+    
+    Dim status As Boolean
+    
+    Dim swModelDocExt           As SldWorks.IModelDocExtension
+
+    Dim swDrawing               As SldWorks.DrawingDoc
+
+    Dim swView                  As SldWorks.View
+    
+    Dim Part As Object
+    
+    
+    Set swApp = Application.SldWorks
+
+    Set swModelDoc = swApp.ActiveDoc
+    
+    Set swSelMgr = swModelDoc.SelectionManager
+       
+    Dim createdNewBOM As Boolean
+    createdNewBOM = False
+    
+    Dim NewBomName As String
+    
+    Dim retryCounter As Integer
+    retryCounter = 0
+    
+    
+    
+    Dim usedSelection As Boolean
+    
+    Dim selectedObject As Object
+    Set selectedObject = swSelMgr.GetSelectedObject5(1)
+    
+    
+    If Not selectedObject Is Nothing Then
+    
+        If Not VBA.Left(selectedObject.name, 17) = Bill of Materials Then
+            Set swBomFeature = Nothing
+        Else
+            Set swBomFeature = swSelMgr.GetSelectedObject5(1)
+            usedSelection = True
+            
+        End If
+        
+        
+    End If
+    
+    
+CreateBom
+    If swBomFeature Is Nothing Then
+        usedSelection = False
+                
+        'MsgBox Creating new BOM
+        
+        Set swDrawing = swModelDoc
+    
+        Set swModelDocExt = swModelDoc.Extension
+        
+       ' TraverseFeatureTree Drawing View
+       
+        status = swModelDoc.ActivateView(GetDrawingName)
+    
+        Set swView = swModelDoc.ActiveDrawingView
+        
+        
+        If swModelDoc Is Nothing Then
+            MsgBox No active drawing view
+        End If
+        
+        
+         ' Insert parts-only BOM table
+        Dim AnchorType              As Long
+        AnchorType = swBOMConfigurationAnchor_TopLeft
+        
+        Dim BomType                 As Long
+        BomType = swBomType_Indented
+        
+        Dim Configuration           As String
+        Configuration = Default
+    
+        Dim TableTemplate           As String
+        TableTemplate = EPublicSolidWorks ToolboxMacrosSW BOM File Name vs Title CheckExportBomTemplate.sldbomtbt
+    
+        Dim swBOMAnnotation
+    
+        Set swBOMAnnotation = swView.InsertBomTable2(False, 3, 0, AnchorType, BomType, Configuration, TableTemplate)
+        
+        If swBOMAnnotation Is Nothing Then
+            MsgBox Failed to create BOM. Please manually create one using the template at & vbNewLine & vbNewLine & TableTemplate & vbNewLine & vbNewLine & then select the new BOM and run the application again.
+            Exit Sub
+        End If
+        
+        Set swBomFeature = swBOMAnnotation.BomFeature
+        createdNewBOM = True
+    
+    
+    End If
+    
+    Dim tempTable As ITableAnnotation
+    
+    vTableArr = swBomFeature.GetTableAnnotations
+    
+    Dim count As Integer
+    count = 0
+        
+        For Each vTable In vTableArr
+            Set swTableAnn = vTable
+            Set tempTable = vTable
+            status = tempTable.SetColumnType3(1, 204, False, SW-Title(Title))
+            status = tempTable.SetColumnType3(2, 204, False, SW-File Name(File Name))
+            
+            
+        Next vTable
+        
+    ' Rename BOM with .csv file extension
+    CSVFile = RenameBomToCSV
+    
+    ' Save csv file
+    retval = swTableAnn.SaveAsText(CSVFile, ;)
+    
+    
+    'Shell EWORKOutdwgSolidworksBomOutputsPERSONAL.xlsm, 6
+    ' Now change file extension to .xls and save
+    Dim excelFileName As String
+    
+    ' Delete the new BOM
+    If Not usedSelection Then
+        status = swModelDoc.Extension.SelectByID2(swBomFeature.name, BOMFEATURE, 0, 0, 0, False, 0, Nothing, 0)
+        swModelDoc.EditDelete
+    End If
+    
+    excelFileName = SaveCSVAsXLS(CSVFile)
+    
+    
+    ' Get rid of .csv file
+    DeleteFile (CSVFile)
+    
+     
+    
+    
+    
+    ' Complete process
+    response = MsgBox(BOM processed. Delete Excel file, vbYesNo)
+    
+    If response = 6 Then
+        DeleteFile (excelFileName)
+    End If
+    
+    
+    ' Clean up
+    Set swBomFeature = Nothing
+        
+    Set swModelDoc = Nothing
+        
+    Set swApp = Nothing
+    
+    
+ErrH
+    
+    If Err.Number = 0 Or Err.Number = 20 Then
+        Resume Next
+        
+    Else
+        If Err.Number = 70 Then
+            MsgBox Permission Denied File is still open somewhere. If you want to delete the file, you can find it at 'EWORKOutdwgSolidworksBomOutputs'
+        ElseIf Err.Number = 438 And retryCounter  1 Then
+            retryCounter = retryCounter + 1
+            Set swBomFeature = Nothing
+            Set selectedObject = Nothing
+            Resume CreateBom
+        
+        Else
+            MsgBox Err.Number &   & Err.Description
+        End If
+        
+        
+    
+    End If
+    
+
+    
+End Sub
+
+
+
+
+Function RenameBomToCSV() As String
+        
+    Dim swApp       As SldWorks.SldWorks
+    
+    Dim swModelDoc  As SldWorks.ModelDoc2
+    
+    Dim GetPath     As String
+    
+    'clear string
+    RenameBomToCSV = 
+    
+    Set swApp = Application.SldWorks
+
+    Set swModelDoc = swApp.ActiveDoc
+    
+    'Get full path of active document
+    GetPath = swModelDoc.GetPathName
+    
+    'take off solidworks file extension
+    GetPath = VBA.Left(GetPath, Len(GetPath) - 6)
+    
+    GetPath = EWORKOutdwgSolidworksBomOutputs & VBA.Right(GetPath, 9)
+    
+    
+    'now add csv file extension
+    GetPath = GetPath & csv
+    
+    RenameBomToCSV = GetPath
+    
+    
+    'clean up
+    Set swModelDoc = Nothing
+        
+    Set swApp = Nothing
+
+End Function
+
+
+Sub DeleteFile(DeleteWhichFile As String)
+
+    Kill DeleteWhichFile
+
+End Sub
+
+
+Sub TraverseFeatureTree(searchID As String) ' You could even add arguments
+
+    
+    Dim swApp         As SldWorks.SldWorks
+    
+    Dim swModelDoc    As SldWorks.ModelDoc2
+    
+    Dim swFeature     As SldWorks.Feature
+    
+    Dim ModelDocType  As Long
+    
+    Dim FeatureName   As String
+    
+    
+    ' Connect to SW
+    Set swApp = Application.SldWorks
+    
+    ' Get active document
+    Set swModelDoc = swApp.ActiveDoc
+    
+    ' Clear any selection
+    swModelDoc.ClearSelection
+    
+    ' Get document type
+    ModelDocType = swModelDoc.GetType
+    
+    ' Get feature manager
+    ''Set swFeatMgr = swModelDoc.FeatureManager
+    
+    ' Get first feature in feature manager
+    Set swFeature = swModelDoc.FirstFeature
+    
+    
+        ' Start traversal
+        While Not swFeature Is Nothing
+
+            FeatureName = swFeature.name
+            
+            Debug.Print FeatureName
+                
+                ' Do what you want here. I just searched for a BOM called Bill of Materials2
+                ' Change Bill of Materials2 to the BOM of your choice
+                If FeatureName = searchID Then
+            
+                    ' Select the sketch in the tree
+                    swFeature.Select True
+                    
+                    ' Exit early
+                    Exit Sub
+                
+                End If
+        
+            ' Get next feature
+            Set swFeature = swFeature.GetNextFeature
+        
+        Wend
+    
+End Sub
+    
+Function GetDrawingName() As String
+    Dim swApp       As SldWorks.SldWorks
+    
+    Dim swModelDoc  As SldWorks.ModelDoc2
+    
+    Set swApp = Application.SldWorks
+
+    Set swModelDoc = swApp.ActiveDoc
+    
+    Dim drawing As Object
+    Set drawing = swModelDoc.GetFirstView()
+    
+    
+        ' Start traversal
+    While Not VBA.Left(drawing.name, 12) = Drawing View
+        Set drawing = drawing.GetNextView()
+        
+    Wend
+        
+    GetDrawingName = drawing.name
+
+End Function
+
+Function SaveCSVAsXLS(WhichDoc As String) As String
+    Dim xlApp
+    Set xlApp = CreateObject(Excel.Application)
+    
+    xlApp.Visible = True
+    
+    Dim xlWB
+    Set xlWB = xlApp.Workbooks.Add(EPublicSolidWorks ToolboxMacrosSW BOM File Name vs Title Checktemplate.xltm)
+    
+    Dim xlWS
+    Set xlWS = xlWB.Sheets(Sheet1)
+    
+    With xlWS.QueryTables.Add(Connection=TEXT; & WhichDoc, Destination=xlWS.Range(A1))
+        .TextFileParseType = 1
+        .TextFileCommaDelimiter = False
+        .TextFileOtherDelimiter = ;
+        .Refresh
+    
+    End With
+    
+    Dim name
+    name = VBA.Left(WhichDoc, Len(WhichDoc) - 3) & xls
+    'Save
+    xlWB.SaveAs name, 56
+    
+    
+    xlApp.Visible = True
+    
+    SaveCSVAsXLS = name
+    
+End Function
+
